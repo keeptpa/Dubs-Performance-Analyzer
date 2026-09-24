@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using Analyzer.Profiling;
 using UnityEngine;
@@ -24,6 +24,13 @@ namespace Analyzer
         public static bool disableThreadedPatching = false;
         public static HashSet<string> SavedPatches_Tick;
         public static HashSet<string> SavedPatches_Update;
+
+        // Web performance monitor
+        public static bool webMonitorEnabled = false;
+        public static int webMonitorPort = 25951;
+        public static float webSpikeThresholdMs = 100f;
+        public static bool webCaptureStacks = true;
+        public static float webPayloadHz = 2f;
 
         // Performance Settings are held in the type which implements the optimisation
 
@@ -53,6 +60,16 @@ namespace Analyzer
 
             Scribe_Collections.Look(ref SavedPatches_Update, "SavedPatches_Update");
             Scribe_Collections.Look(ref SavedPatches_Tick, "SavedPatches_Tick");
+            Scribe_Collections.Look(ref ModFilter.BlockedKeys, "blockedModFilters");
+
+            Scribe_Values.Look(ref webMonitorEnabled, "webMonitorEnabled", false);
+            Scribe_Values.Look(ref webMonitorPort, "webMonitorPort", 25951);
+            Scribe_Values.Look(ref webSpikeThresholdMs, "webSpikeThresholdMs", 100f);
+            Scribe_Values.Look(ref webCaptureStacks, "webCaptureStacks", true);
+            Scribe_Values.Look(ref webPayloadHz, "webPayloadHz", 2f);
+
+            if (ModFilter.BlockedKeys == null)
+                ModFilter.BlockedKeys = new HashSet<string>();
         }
 
         public void DoSettings(Rect canvas)

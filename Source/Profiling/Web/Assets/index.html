@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DPA Web Monitor - RimWorld</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">DPA<span>Web Monitor</span></div>
+
+  <div id="conn" class="conn conn-wait">连接中…</div>
+
+  <div class="session" id="session">—</div>
+
+  <div class="spacer"></div>
+
+  <button id="btn-pause" class="btn" title="暂停/恢复采样">暂停采样</button>
+  <button id="btn-deep" class="btn btn-accent" title="启用 DPA 的逐方法热点分析（开销较高）">深度分析：关</button>
+
+  <label class="chk" title="Tick 模式统计逻辑帧，Update 模式统计每帧渲染/更新">
+    <input type="checkbox" id="chk-tick"> Tick 模式
+  </label>
+
+  <label class="field">
+    尖峰阈值
+    <input type="number" id="inp-threshold" min="5" max="5000" step="5" value="100">
+    ms
+  </label>
+
+  <button id="btn-clear" class="btn">清空尖峰</button>
+  <button id="btn-reset" class="btn">重置统计</button>
+</header>
+
+<section class="cards" id="cards"></section>
+
+<section class="charts">
+  <div class="chart chart-wide">
+    <h3>帧时间 · 最近 25 秒 <span class="hint" id="hint-frame"></span></h3>
+    <canvas id="cv-frame" height="180"></canvas>
+  </div>
+  <div class="chart chart-wide">
+    <h3>帧时间 · 全程概览 <span class="hint" id="hint-overview"></span></h3>
+    <canvas id="cv-overview" height="120"></canvas>
+  </div>
+  <div class="chart">
+    <h3>FPS / TPS</h3>
+    <canvas id="cv-fps" height="150"></canvas>
+  </div>
+  <div class="chart">
+    <h3>内存 MB</h3>
+    <canvas id="cv-mem" height="150"></canvas>
+  </div>
+  <div class="chart">
+    <h3>GC 次数 / 秒</h3>
+    <canvas id="cv-gc" height="150"></canvas>
+  </div>
+</section>
+
+<section class="tables">
+  <div class="panel panel-spikes">
+    <h3>尖峰记录 <span class="hint" id="spike-count"></span></h3>
+    <div class="scroll">
+      <table id="tbl-spikes">
+        <thead>
+          <tr>
+            <th data-sort="t">时间</th>
+            <th data-sort="ms">帧耗时</th>
+            <th data-sort="tickMs">其中 Tick</th>
+            <th data-sort="fps">FPS</th>
+            <th data-sort="heapMB">托管堆</th>
+            <th data-sort="topMs">最热方法</th>
+            <th>调用栈</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel panel-logs">
+    <h3>
+      方法热点
+      <span class="hint" id="logs-hint"></span>
+      <input id="filter-logs" class="filter" placeholder="过滤方法 / mod…">
+      <select id="sort-logs" class="select">
+        <option value="percent">按占比</option>
+        <option value="avg">按平均</option>
+        <option value="max">按峰值</option>
+        <option value="total">按总计</option>
+        <option value="calls">按调用次数</option>
+      </select>
+    </h3>
+    <div class="scroll">
+      <table id="tbl-logs">
+        <thead>
+          <tr>
+            <th>方法</th>
+            <th>Mod</th>
+            <th class="num">占比</th>
+            <th class="num">平均</th>
+            <th class="num">峰值</th>
+            <th class="num">总计</th>
+            <th class="num">调用</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel panel-mods">
+    <h3>按 Mod 聚合</h3>
+    <div class="scroll">
+      <table id="tbl-mods">
+        <thead>
+          <tr>
+            <th>Mod</th>
+            <th class="num">总计 ms</th>
+            <th class="num">峰值 ms</th>
+            <th class="num">调用</th>
+            <th class="num">方法数</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<div id="overlay" class="overlay">
+  <div class="modal">
+    <div class="modal-head">
+      <strong id="stack-title">调用栈</strong>
+      <button id="stack-close" class="btn">关闭</button>
+    </div>
+    <pre id="stack-body">加载中…</pre>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

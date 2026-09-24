@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
 		<OutDir>..\1.5\Assemblies\</OutDir>
@@ -16,4 +16,10 @@
 		<PackageReference Include="Krafs.Rimworld.Ref" Version="1.5.*"/>
 		<PackageReference Include="Lib.Harmony" Version="2.3.3" ExcludeAssets="runtime"/>
 	</ItemGroup>
-</Project>
+	<!-- Dashboard assets are served straight out of the assembly, so the mod folder
+	     stays a plain RimWorld mod with no loose web files to ship. -->
+	<ItemGroup>
+		<EmbeddedResource Include="Profiling\Web\Assets\index.html" />
+		<EmbeddedResource Include="Profiling\Web\Assets\app.js" />
+		<EmbeddedResource Include="Profiling\Web\Assets\app.css" />
+	</ItemGroup></Project>

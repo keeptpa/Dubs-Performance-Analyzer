@@ -1,4 +1,4 @@
-﻿	using System;
+	using System;
 using System.Collections.Generic;
 using System.Linq;
 	using System.Reflection;
@@ -47,6 +47,8 @@ namespace Analyzer.Profiling
 			var rect = listing.GetRect(Text.LineHeight);
 			DubGUI.Checkbox(rect, s, ref Settings.disableCleanup);
 			TooltipHandler.TipRegion(rect, Strings.settings_disable_cleanup_desc);
+
+			DrawWebMonitorSettings(listing);
 
 			if (settingsPage) return;
 
@@ -303,6 +305,70 @@ namespace Analyzer.Profiling
 			{
 				ThreadSafeLogger.ReportException(e, $"Failed to process search bar input");
 			}
+		}
+		private static string webPortBuffer;
+
+		// Settings for the embedded HTTP dashboard (see Analyzer.Profiling.Web).
+		private static void DrawWebMonitorSettings(Listing_Standard listing)
+		{
+			listing.GapLine();
+			DubGUI.Heading(listing, Strings.settings_web_heading);
+
+			if (DubGUI.Checkbox(Strings.settings_web_enabled, listing, ref Settings.webMonitorEnabled))
+			{
+				try
+				{
+					if (Settings.webMonitorEnabled) Web.WebEntry.StartServer();
+					else Web.WebEntry.StopServer();
+
+					Modbase.Settings?.Write();
+				}
+				catch (Exception e)
+				{
+					ThreadSafeLogger.ReportException(e, "Failed to toggle the web performance monitor");
+				}
+			}
+
+			var url = $"http://127.0.0.1:{Web.WebServer.Port}/";
+			var row = listing.GetRect(Text.LineHeight);
+			if (Web.WebServer.IsRunning)
+			{
+				Widgets.Label(row.LeftPart(0.6f), Strings.settings_web_url + " " + url);
+				if (Widgets.ButtonText(row.RightPart(0.38f), Strings.settings_web_open, false))
+					Application.OpenURL(url);
+			}
+			else
+			{
+				Widgets.Label(row, Strings.settings_web_url + " -");
+			}
+
+			webPortBuffer ??= Settings.webMonitorPort.ToString();
+			var portRow = listing.GetRect(Text.LineHeight);
+			Widgets.Label(portRow.LeftPart(0.45f), Strings.settings_web_port);
+			DubGUI.InputField(portRow.LeftPart(0.45f).RightPart(0.5f), "", ref webPortBuffer, null, 5, false, false, false);
+
+			// Applied explicitly: restarting the listener on every keystroke would be rude.
+			if (Widgets.ButtonText(portRow.RightPart(0.5f), Strings.settings_web_port_apply, false)
+				&& int.TryParse(webPortBuffer, out int parsedPort)
+				&& parsedPort >= 1024 && parsedPort <= 65535
+				&& parsedPort != Settings.webMonitorPort)
+			{
+				Settings.webMonitorPort = parsedPort;
+				Web.WebEntry.RestartServer();
+				Modbase.Settings?.Write();
+			}
+
+			DubGUI.LabeledSliderFloat(listing, Strings.settings_web_threshold, ref Settings.webSpikeThresholdMs, 10f, 1000f);
+			Web.WebTelemetry.SpikeThresholdMs = Settings.webSpikeThresholdMs;
+
+			if (DubGUI.Checkbox(Strings.settings_web_stacks, listing, ref Settings.webCaptureStacks))
+			{
+				Web.WebTelemetry.CaptureStacks = Settings.webCaptureStacks;
+				Modbase.Settings?.Write();
+			}
+
+			DubGUI.LabeledSliderFloat(listing, Strings.settings_web_payload_hz, ref Settings.webPayloadHz, 0.5f, 10f);
+			Web.WebEntry.PayloadHz = Settings.webPayloadHz;
 		}
 	}
 }

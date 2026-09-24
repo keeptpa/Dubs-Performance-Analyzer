@@ -157,7 +157,11 @@ namespace Analyzer.Profiling
                 else if ((object)key == H_RootUpdate.FrameTimeKey)
                     calls++;
                 
-                newLogs.Add(new(currentLogCount, value.label, average, (float)max, key, (float)total, calls, maxCalls, value.type, value.meth, value.pinned));
+                var assembly = value.meth?.DeclaringType?.Assembly
+                    ?? value.type?.Assembly;
+                var modKey = ModInfoCache.GetFilterKey(assembly);
+                newLogs.Add(new(currentLogCount, value.label, average, (float)max, key, (float)total,
+                    calls, maxCalls, value.type, value.meth, value.pinned, modKey));
             }
 
             var sortedLogs = new List<ProfileLog>(newLogs.Count);

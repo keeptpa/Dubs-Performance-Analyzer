@@ -324,6 +324,9 @@ namespace Analyzer.Profiling
 
         private static void DrawLog(ProfileLog log, ref float currentListHeight)
         {
+            if (!ModFilter.IsAllowed(log))
+                return;
+
             if (log.pinned is false && Matched(log, Panel_TopRow.TimesFilter) is false)  {
                 return;
             }
@@ -366,7 +369,9 @@ namespace Analyzer.Profiling
             if (Widgets.ButtonInvisible(visible))
                 ClickWork(log, profile);
 
-            var declaringAssembly = log.meth?.DeclaringType?.Assembly;
+            var declaringAssembly = log.meth?.DeclaringType?.Assembly
+                ?? log.type?.Assembly;
+            var verdict = PerformanceJudge.Evaluate(log, GUIController.CurrentCategory);
 
             // Colour a fillable bar below the log depending on the % fill of a log
             
@@ -379,15 +384,18 @@ namespace Analyzer.Profiling
                         <= .1f => Textures.lighterGrey,
                         _ => Textures.white
                     }
-                    : log.percent switch
+                    : verdict.Severity switch
                     {
-                        < .005f => Textures.green,
-                        <= .03f => Textures.blue,
-                        <= .1f => Textures.yellow,
-                        _ => Textures.red
+                        PerformanceSeverity.Unknown => Textures.grey,
+                        PerformanceSeverity.Good => Textures.green,
+                        PerformanceSeverity.Watch => Textures.blue,
+                        PerformanceSeverity.Poor => Textures.yellow,
+                        PerformanceSeverity.Severe => Textures.red,
+                        _ => Textures.grey
                     };
 
             Widgets.FillableBar(visible.BottomPartPixels(8f), Mathf.Clamp01(log.percent * 10f), colour, Textures.clear, false);
+            TooltipHandler.TipRegion(visible, verdict.Reason);
 
             Text.Anchor = TextAnchor.MiddleCenter;
 

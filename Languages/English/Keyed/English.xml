@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <LanguageData>
 
 	<!--Tabs-->
@@ -34,6 +34,18 @@
     <settings.long.form.names>Show methods in analyzer using long-form names (includes params)</settings.long.form.names>
     <settings.disable.threading>Disable multi-threaded patching, may prevent issues with assembly patching.</settings.disable.threading>
 
+	<!-- Web performance monitor -->
+	<settings.web.heading>Web Performance Monitor</settings.web.heading>
+	<settings.web.heading.desc>Streams frame times, spikes, memory and per-mod hotspots to a local web page</settings.web.heading.desc>
+	<settings.web.enabled>Enable the local web monitor</settings.web.enabled>
+	<settings.web.url>Listening on</settings.web.url>
+	<settings.web.open>Open in browser</settings.web.open>
+	<settings.web.port>Port</settings.web.port>
+	<settings.web.port.apply>Apply port</settings.web.port.apply>
+	<settings.web.threshold>Spike threshold (ms)</settings.web.threshold>
+	<settings.web.stacks>Capture a call stack when a spike happens</settings.web.stacks>
+	<settings.web.payloadhz>Dashboard updates per second</settings.web.payloadhz>
+
 	<!-- Dev Options -->
 	<devoptions.heading>Profile</devoptions.heading>
 
@@ -52,6 +64,8 @@
 	<top.pause.analyzer>Pause/Unpause profiling that the analyzer is done, this is not equivalent to unpatching</top.pause.analyzer>
 	<top.refresh>Refresh the list of logs</top.refresh>
 	<top.search>Search by name or time to filter which entries show</top.search>
+	<top.mod.filter>Filter performance logs by mod</top.mod.filter>
+	<top.mod.filter.button>Mods</top.mod.filter.button>
 	<top.gc.tip>This will show a rough estimate of the memory consumed and thrown away at a given time</top.gc.tip>
 	<top.fps.tip>This will show your calculated frames per second</top.fps.tip>
 	<top.tps.tip>This will show your ticks per second, ticks are the metric the game uses to quantiy time passing, multiple ticks can happen per second, the game aims to reach 60tps at 1x</top.tps.tip>
@@ -69,6 +83,9 @@
 	<logs.maxpu>Max For {0}</logs.maxpu>
 
 	<dpa.frame>Frame</dpa.frame>
+	<mod.filter.title>Mod performance filter</mod.filter.title>
+	<mod.filter.all>Select all</mod.filter.all>
+	<mod.filter.none>Select none</mod.filter.none>
 
 
 	<logs.max.desc>Sort the rows by the maximum (MS) peak the method has reached</logs.max.desc>

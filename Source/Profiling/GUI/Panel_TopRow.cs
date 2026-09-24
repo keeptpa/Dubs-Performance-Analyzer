@@ -34,9 +34,18 @@ namespace Analyzer.Profiling
             }
 
             TooltipHandler.TipRegion(row, Strings.top_refresh);
+            rect.AdjustHorizonallyBy(25f);
+
+            row = rect.LeftPartPixels(70f);
+            if (ModFilter.HasBlockedMods)
+                Widgets.DrawHighlight(row);
+            if (Widgets.ButtonText(row, Strings.top_mod_filter_button))
+                Find.WindowStack.Add(new Window_ModFilter());
+            TooltipHandler.TipRegion(row, Strings.top_mod_filter);
+            rect.AdjustHorizonallyBy(70f);
 
             var searchbox = rect.LeftPartPixels(rect.width - 300f);
-            searchbox.x += 25f;
+            searchbox.x += 5f;
 
             DubGUI.InputField(searchbox, Strings.top_search, ref TimesFilter, DubGUI.MintSearch);
 

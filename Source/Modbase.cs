@@ -1,4 +1,4 @@
-﻿using Analyzer.Profiling;
+using Analyzer.Profiling;
 using HarmonyLib;
 using RimWorld;
 using System;
@@ -92,6 +92,12 @@ namespace Analyzer
                         prefix: new HarmonyMethod(typeof(DebugLogenabler), nameof(DebugLogenabler.DevModePrefix)));
                     StaticHarmony.Patch(AccessTools.Method(typeof(DebugWindowsOpener), "DevToolStarterOnGUI"),
                         prefix: new HarmonyMethod(typeof(DebugLogenabler), nameof(DebugLogenabler.DebugKeysPatch)));
+                }
+
+                {
+                    // Web performance monitor: installs its frame/tick sampling hooks and,
+                    // if enabled in settings, opens the local dashboard.
+                    Analyzer.Profiling.Web.WebEntry.Start();
                 }
 
 #if DEBUG

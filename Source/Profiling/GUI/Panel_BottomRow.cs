@@ -239,9 +239,10 @@ namespace Analyzer.Profiling
             if (info.Contains("UnityEngine")) return "Rimworld - Unity";
             if (info.Contains("System")) return "Rimworld - System";
 
-            if (ModInfoCache.AssemblyToModname.TryGetValue(info, out var value)) return value;
-
-            return "Failed to locate assembly information";
+            var modName = ModInfoCache.GetModName(info);
+            return modName == ModInfoCache.UnknownKey
+                ? "Failed to locate assembly information"
+                : modName;
         }
     }
 }

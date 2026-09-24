@@ -1,4 +1,4 @@
-﻿using Analyzer.Profiling;
+using Analyzer.Profiling;
 using UnityEngine;
 using Verse;
 
@@ -69,6 +69,18 @@ namespace Analyzer
         public static string settings_long_form_names => "settings.long.form.names".Tr();
         public static string settings_disable_threading => "settings.disable.threading".Tr();
 
+        // Web performance monitor
+        public static string settings_web_heading => "settings.web.heading".Tr();
+        public static string settings_web_heading_desc => "settings.web.heading.desc".Tr();
+        public static string settings_web_enabled => "settings.web.enabled".Tr();
+        public static string settings_web_url => "settings.web.url".Tr();
+        public static string settings_web_open => "settings.web.open".Tr();
+        public static string settings_web_port => "settings.web.port".Tr();
+        public static string settings_web_port_apply => "settings.web.port.apply".Tr();
+        public static string settings_web_threshold => "settings.web.threshold".Tr();
+        public static string settings_web_stacks => "settings.web.stacks".Tr();
+        public static string settings_web_payload_hz => "settings.web.payloadhz".Tr();
+
 
         // Dev Options
         public static string devoptions_input_method => "devoptions.input.method".Tr();
@@ -83,6 +95,8 @@ namespace Analyzer
         public static string top_pause_analyzer => "top.pause.analyzer".Tr();
         public static string top_refresh => "top.refresh".Tr();
         public static string top_search => "top.search".Tr();
+        public static string top_mod_filter => "top.mod.filter".Tr();
+        public static string top_mod_filter_button => "top.mod.filter.button".Tr();
         public static string top_gc_tip => "top.gc.tip".Tr();
         public static string top_fps_tip => "top.fps.tip".Tr();
         public static string top_tps_tip => "top.tps.tip".Tr();
@@ -116,5 +130,8 @@ namespace Analyzer
         public static string panel_patch_type => "panel.patch.type".Tr();
         public static string panel_opengithub => "panel.opengithub".Tr();
         public static string panel_opendnspy => "panel.opendnspy".Tr();
+        public static string mod_filter_title => "mod.filter.title".Tr();
+        public static string mod_filter_all => "mod.filter.all".Tr();
+        public static string mod_filter_none => "mod.filter.none".Tr();
     }
 }

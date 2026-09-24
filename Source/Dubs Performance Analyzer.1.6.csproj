@@ -21,4 +21,12 @@
 		  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
 	</ItemGroup>
+
+	<!-- Dashboard assets are served straight out of the assembly, so the mod folder
+	     stays a plain RimWorld mod with no loose web files to ship. -->
+	<ItemGroup>
+		<EmbeddedResource Include="Profiling\Web\Assets\index.html" />
+		<EmbeddedResource Include="Profiling\Web\Assets\app.js" />
+		<EmbeddedResource Include="Profiling\Web\Assets\app.css" />
+	</ItemGroup>
 </Project>
