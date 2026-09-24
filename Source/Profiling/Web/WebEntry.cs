@@ -82,24 +82,36 @@ namespace Analyzer.Profiling.Web
                 harmony.Patch(entryUpdate, postfix: new HarmonyMethod(self, nameof(MenuPostfix)));
             }
 
+            // Each call is one profiling cycle: a frame in update mode, a tick in tick mode.
+            // The spike attribution sums the cycles that fall inside a frame.
+            var endUpdate = AccessTools.Method(typeof(ProfileController), nameof(ProfileController.EndUpdate));
+            if (endUpdate != null)
+            {
+                harmony.Patch(endUpdate, postfix: new HarmonyMethod(self, nameof(UpdateCyclePostfix)));
+            }
+
             hooksApplied = true;
         }
 
         public static void FramePostfix()
         {
             DrainControls();
+            ThreadSafeLogger.DisplayLogs();
             WebTelemetry.OnFrame();
         }
 
         public static void MenuPostfix()
         {
             DrainControls();
+            ThreadSafeLogger.DisplayLogs();
             WebTelemetry.OnIdleFrame();
         }
 
         public static void TickPrefix() => WebTelemetry.BeginTick();
 
         public static void TickPostfix() => WebTelemetry.EndTick();
+
+        public static void UpdateCyclePostfix() => WebTelemetry.NotifyUpdateCycle();
 
         /// <summary>Queue a main-thread action. Safe to call from an HTTP thread.</summary>
         public static void Enqueue(Action action)
@@ -159,7 +171,6 @@ namespace Analyzer.Profiling.Web
         private static void ApplySettingsFromStorage()
         {
             WebTelemetry.SpikeThresholdMs = Settings.webSpikeThresholdMs;
-            WebTelemetry.CaptureStacks = Settings.webCaptureStacks;
             WebTelemetry.Enabled = Settings.webMonitorEnabled;
             PayloadHz = Settings.webPayloadHz;
         }

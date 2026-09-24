@@ -43,7 +43,6 @@
 	<settings.web.port>Port</settings.web.port>
 	<settings.web.port.apply>Apply port</settings.web.port.apply>
 	<settings.web.threshold>Spike threshold (ms)</settings.web.threshold>
-	<settings.web.stacks>Capture a call stack when a spike happens</settings.web.stacks>
 	<settings.web.payloadhz>Dashboard updates per second</settings.web.payloadhz>
 
 	<!-- Dev Options -->

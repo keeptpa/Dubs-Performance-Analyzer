@@ -177,18 +177,6 @@ namespace Analyzer.Profiling.Web
                     WriteText(stream, 200, "OK", "application/json; charset=utf-8", WebTelemetry.LatestPayload ?? "{}");
                     return;
 
-                case "/api/stack":
-                    {
-                        string idText = request.Get("id");
-                        string stack = int.TryParse(idText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int id)
-                            ? WebTelemetry.GetStack(id)
-                            : null;
-
-                        if (stack == null) WriteText(stream, 404, "Not Found", "text/plain; charset=utf-8", "no stack trace retained for that spike");
-                        else WriteText(stream, 200, "OK", "text/plain; charset=utf-8", stack);
-                        return;
-                    }
-
                 case "/api/control":
                     HandleControl(stream, request);
                     return;
@@ -255,16 +243,6 @@ namespace Analyzer.Profiling.Web
                                 WebTelemetry.SpikeThresholdMs = ms;
                                 Modbase.Settings?.Write();
                             }
-                        });
-                        break;
-
-                    case "captureStacks":
-                        WebEntry.Enqueue(() =>
-                        {
-                            bool on = ParseBool(value);
-                            Settings.webCaptureStacks = on;
-                            WebTelemetry.CaptureStacks = on;
-                            Modbase.Settings?.Write();
                         });
                         break;
 

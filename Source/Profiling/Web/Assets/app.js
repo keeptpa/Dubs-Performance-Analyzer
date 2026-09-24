@@ -323,7 +323,7 @@
       : '尚未记录到超过 ' + num(p.thresholdMs, 0) + 'ms 的帧';
 
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="7" class="empty">暂无尖峰</td></tr>';
+      body.innerHTML = '<tr><td colspan="6" class="empty">暂无尖峰</td></tr>';
       return;
     }
 
@@ -332,6 +332,17 @@
       var s = rows[i];
       var cls = severityClass(s.ms, p.thresholdMs);
       var tickShare = s.ms > 0 ? Math.round((s.tickMs / s.ms) * 100) : 0;
+      var methods = s.methods || [];
+      var top = methods.length ? methods[0] : null;
+
+      var summary;
+      if (top) {
+        summary = '<a href="#" class="spike-detail" data-spike="' + s.id + '">' + esc(top.label) + '</a>' +
+          ' <span class="dim">' + num(top.ms, 0) + 'ms' +
+          (methods.length > 1 ? ' +' + (methods.length - 1) : '') + '</span>';
+      } else {
+        summary = '<span class="dim">无归因（未开深度分析）</span>';
+      }
 
       html += '<tr>' +
         '<td class="mono">' + clock(s.t) + '</td>' +
@@ -339,14 +350,69 @@
         '<td class="num">' + num(s.tickMs, 1) + ' ms <span class="dim">(' + tickShare + '%)</span></td>' +
         '<td class="num">' + int(s.fps) + '</td>' +
         '<td class="num">' + num(s.heapMB, 0) + ' MB</td>' +
-        '<td class="dim">' + esc(s.top || '—') + '</td>' +
-        '<td>' + (s.stack
-          ? '<button class="btn stack-btn" data-stack="' + s.stack + '">查看</button>'
-          : '<span class="dim">—</span>') +
-        '</td>' +
+        '<td>' + summary + '</td>' +
         '</tr>';
     }
     body.innerHTML = html;
+  }
+
+  /**
+   * Cross-spike rollups: where the stutter time accumulated, by method and by mod.
+   * This is the table to read when asking "what keeps hitching".
+   */
+  function renderSpikeAttribution(p) {
+    var methods = p.spikeMethods || [];
+    var mods = p.spikeMods || [];
+
+    var hint = methods.length
+      ? '共 ' + methods.length + ' 个方法'
+      : (p.deep ? '等待尖峰…' : '需要开启深度分析');
+    $('attr-method-hint').textContent = hint;
+    $('attr-mod-hint').textContent = mods.length ? '共 ' + mods.length + ' 个 Mod' : '';
+
+    var body = $('tbl-spike-methods').querySelector('tbody');
+    if (!methods.length) {
+      body.innerHTML = '<tr><td colspan="5" class="empty">' +
+        (p.deep ? '还没有记录到尖峰。' : '开启深度分析后，尖峰会被归因到具体方法与 Mod。') + '</td></tr>';
+    } else {
+      var html = '';
+      for (var i = 0; i < methods.length; i++) {
+        var m = methods[i];
+        html += '<tr>' +
+          '<td title="' + esc(m.name) + '">' + esc(m.name) + '</td>' +
+          '<td class="dim">' + esc(m.mod || '') + '</td>' +
+          '<td class="num hot">' + num(m.totalMs, 0) + '</td>' +
+          '<td class="num">' + num(m.worstMs, 1) + '</td>' +
+          '<td class="num">' + int(m.spikes) + '</td>' +
+          '</tr>';
+      }
+      body.innerHTML = html;
+    }
+
+    body = $('tbl-spike-mods').querySelector('tbody');
+    if (!mods.length) {
+      body.innerHTML = '<tr><td colspan="5" class="empty">' +
+        (p.deep ? '还没有记录到尖峰。' : '开启深度分析后，尖峰会被归因到具体方法与 Mod。') + '</td></tr>';
+      return;
+    }
+
+    var total = 0;
+    for (var k = 0; k < mods.length; k++) total += mods[k].totalMs;
+
+    var modHtml = '';
+    for (var j = 0; j < mods.length; j++) {
+      var mod = mods[j];
+      var share = total > 0 ? (mod.totalMs / total) * 100 : 0;
+      var shareCls = share >= 40 ? 'hot' : share >= 15 ? 'warm' : '';
+      modHtml += '<tr>' +
+        '<td>' + esc(mod.name) + '</td>' +
+        '<td class="num">' + num(mod.totalMs, 0) + '</td>' +
+        '<td class="num">' + num(mod.worstMs, 1) + '</td>' +
+        '<td class="num">' + int(mod.spikes) + '</td>' +
+        '<td class="num ' + shareCls + '">' + num(share, 1) + '%</td>' +
+        '</tr>';
+    }
+    body.innerHTML = modHtml;
   }
 
   // ---------------------------------------------------------------- logs
@@ -474,6 +540,7 @@
       renderCards(p);
       renderCharts(p);
       renderSpikes(p);
+      renderSpikeAttribution(p);
       renderLogs(p);
       renderMods(p);
     } catch (e) {
@@ -601,9 +668,10 @@
     });
 
     $('tbl-spikes').addEventListener('click', function (e) {
-      var id = e.target.getAttribute && e.target.getAttribute('data-stack');
+      var id = e.target.getAttribute && e.target.getAttribute('data-spike');
       if (!id) return;
-      openStack(id);
+      e.preventDefault();
+      openBreakdown(parseInt(id, 10));
     });
 
     $('stack-close').addEventListener('click', function () { $('overlay').classList.remove('open'); });
@@ -620,15 +688,64 @@
     });
   }
 
-  function openStack(id) {
-    $('stack-title').textContent = '尖峰调用栈 #' + id;
-    $('stack-body').textContent = '加载中…';
-    $('overlay').classList.add('open');
+  function openBreakdown(id) {
+    var p = state.payload;
+    if (!p) return;
 
-    fetch('/api/stack?id=' + encodeURIComponent(id), { cache: 'no-store' })
-      .then(function (r) { return r.text(); })
-      .then(function (text) { $('stack-body').textContent = text; })
-      .catch(function (e) { $('stack-body').textContent = '加载失败：' + e.message; });
+    var spike = null;
+    var list = p.spikes || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].id === id) { spike = list[i]; break; }
+    }
+    if (!spike) return;
+
+    $('stack-title').textContent = '尖峰 #' + id + ' · 帧内消耗分解';
+    $('stack-body').innerHTML = breakdownHtml(spike);
+    $('overlay').classList.add('open');
+  }
+
+  /**
+   * Shows what DPA's per-method timers say this particular frame spent its time on.
+   * This is the useful version of "what caused the spike" - a stack trace taken at the end
+   * of the frame only ever contains Root.Update, so it cannot answer the question.
+   */
+  function breakdownHtml(s) {
+    var methods = s.methods || [];
+    var mods = s.mods || [];
+    var tickShare = s.ms > 0 ? Math.round((s.tickMs / s.ms) * 100) : 0;
+
+    var html = '<div class="bd-head">帧耗时 <strong>' + num(s.ms, 1) + ' ms</strong>' +
+      ' · 其中 Tick <strong>' + num(s.tickMs, 1) + ' ms</strong>（' + tickShare + '%）' +
+      ' · 会话 ' + clock(s.t) + ' · FPS ' + int(s.fps) + '</div>';
+
+    if (!methods.length) {
+      html += '<p class="empty">这一帧没有归因数据。逐方法计时只在开启深度分析后才有。</p>';
+      return html;
+    }
+
+    html += '<table><thead><tr><th>方法</th><th>Mod</th><th class="num">本帧 ms</th><th class="num">占帧比</th></tr></thead><tbody>';
+    for (var i = 0; i < methods.length; i++) {
+      var m = methods[i];
+      var share = s.ms > 0 ? (m.ms / s.ms) * 100 : 0;
+      html += '<tr><td>' + esc(m.label) + '</td>' +
+        '<td class="dim">' + esc(m.mod || '') + '</td>' +
+        '<td class="num">' + num(m.ms, 2) + '</td>' +
+        '<td class="num">' + num(share, 1) + '%</td></tr>';
+    }
+    html += '</tbody></table>';
+
+    if (mods.length) {
+      html += '<div class="bd-head">按 Mod 小计</div>' +
+        '<table><thead><tr><th>Mod</th><th class="num">本帧 ms</th></tr></thead><tbody>';
+      for (var j = 0; j < mods.length; j++) {
+        html += '<tr><td>' + esc(mods[j].mod) + '</td>' +
+          '<td class="num">' + num(mods[j].ms, 2) + '</td></tr>';
+      }
+      html += '</tbody></table>';
+    }
+
+    html += '<p class="bd-note">耗时来自 DPA 的逐方法计时，嵌套调用会重复计入，所以合计可能超过帧耗时，看相对占比即可。</p>';
+    return html;
   }
 
   wire();

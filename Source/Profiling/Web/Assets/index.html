@@ -71,8 +71,43 @@
             <th data-sort="tickMs">其中 Tick</th>
             <th data-sort="fps">FPS</th>
             <th data-sort="heapMB">托管堆</th>
-            <th data-sort="topMs">最热方法</th>
-            <th>调用栈</th>
+            <th>帧内主要消耗</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>尖峰归因 · 按方法 <span class="hint" id="attr-method-hint"></span></h3>
+    <div class="scroll">
+      <table id="tbl-spike-methods">
+        <thead>
+          <tr>
+            <th>方法</th>
+            <th>Mod</th>
+            <th class="num">累计尖峰 ms</th>
+            <th class="num">单次最差</th>
+            <th class="num">命中尖峰</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>尖峰归因 · 按 Mod <span class="hint" id="attr-mod-hint"></span></h3>
+    <div class="scroll">
+      <table id="tbl-spike-mods">
+        <thead>
+          <tr>
+            <th>Mod</th>
+            <th class="num">累计尖峰 ms</th>
+            <th class="num">单次最差</th>
+            <th class="num">命中尖峰</th>
+            <th class="num">占比</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -133,10 +168,10 @@
 <div id="overlay" class="overlay">
   <div class="modal">
     <div class="modal-head">
-      <strong id="stack-title">调用栈</strong>
+      <strong id="stack-title">帧内消耗分解</strong>
       <button id="stack-close" class="btn">关闭</button>
     </div>
-    <pre id="stack-body">加载中…</pre>
+    <div id="stack-body" class="modal-body"></div>
   </div>
 </div>
 

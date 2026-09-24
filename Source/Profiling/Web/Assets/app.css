@@ -211,3 +211,23 @@ tbody tr:hover { background: #1a2531; }
   word-break: break-word;
   color: #b9c7d6;
 }
+
+.modal-body {
+  padding: 12px;
+  overflow: auto;
+}
+.modal-body table { font-size: 12px; }
+.modal-body .bd-head {
+  margin: 4px 0 8px;
+  color: var(--fg-dim);
+}
+.modal-body .bd-head strong { color: var(--fg); }
+.modal-body .bd-note {
+  margin: 12px 0 0;
+  color: var(--fg-dim);
+  font-size: 11px;
+}
+.modal-body .empty { padding: 8px 0; color: var(--fg-dim); }
+
+.spike-detail { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent); }
+.spike-detail:hover { color: #7fb6d8; }

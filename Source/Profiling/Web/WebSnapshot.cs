@@ -15,6 +15,7 @@ namespace Analyzer.Profiling.Web
         private const int MaxRecentFrames = 1500;
         private const int MaxLogs = 150;
         private const int MaxSpikesOut = 120;
+        private const int MaxAttributionRows = 60;
 
         private static readonly JsonWriter Writer = new JsonWriter(1 << 17);
         private static long sequence;
@@ -81,7 +82,6 @@ namespace Analyzer.Profiling.Web
             Writer.Prop("deepTick", WebProfilerControl.TickCategory);
             Writer.Prop("monitorEnabled", WebTelemetry.Enabled);
             Writer.Prop("thresholdMs", WebTelemetry.SpikeThresholdMs);
-            Writer.Prop("captureStacks", WebTelemetry.CaptureStacks);
             Writer.Prop("payloadHz", WebEntry.PayloadHz);
             Writer.Prop("sortBy", global::Analyzer.Profiling.Analyzer.SortBy.ToString());
 
@@ -109,6 +109,7 @@ namespace Analyzer.Profiling.Web
             Writer.EndObject();
 
             WriteSpikes();
+            WriteSpikeAttribution();
             WriteLogs();
             WriteMods();
 
@@ -163,6 +164,8 @@ namespace Analyzer.Profiling.Web
             for (int i = skip; i < retained; i++)
             {
                 var s = WebTelemetry.SpikeAt(i);
+                int slot = WebTelemetry.SpikeSlot(i);
+
                 Writer.BeginObject();
                 Writer.Prop("id", s.Id);
                 Writer.Prop("t", s.AtSeconds);
@@ -171,10 +174,77 @@ namespace Analyzer.Profiling.Web
                 Writer.Prop("tick", s.Tick);
                 Writer.Prop("fps", s.Fps);
                 Writer.Prop("heapMB", s.HeapMB);
-                Writer.Prop("top", s.TopLabels);
-                Writer.Prop("topMs", s.TopMs);
-                Writer.Prop("stack", s.StackId);
-                Writer.Prop("stackLines", s.StackLines);
+                WriteSpikeMethods(slot);
+                WriteSpikeMods(slot);
+                Writer.EndObject();
+            }
+            Writer.EndArray();
+        }
+
+        private static void WriteSpikeMethods(int slot)
+        {
+            int baseIndex = slot * WebTelemetry.TopMethodsPerSpike;
+
+            Writer.BeginArray("methods");
+            for (int i = 0; i < WebTelemetry.TopMethodsPerSpike; i++)
+            {
+                string label = WebTelemetry.SpikeMethodLabels[baseIndex + i];
+                if (label == null) break;
+
+                Writer.BeginObject();
+                Writer.Prop("label", label);
+                Writer.Prop("mod", WebTelemetry.SpikeMethodMods[baseIndex + i]);
+                Writer.Prop("ms", WebTelemetry.SpikeMethodMs[baseIndex + i]);
+                Writer.EndObject();
+            }
+            Writer.EndArray();
+        }
+
+        private static void WriteSpikeMods(int slot)
+        {
+            int baseIndex = slot * WebTelemetry.TopModsPerSpike;
+
+            Writer.BeginArray("mods");
+            for (int i = 0; i < WebTelemetry.TopModsPerSpike; i++)
+            {
+                string name = WebTelemetry.SpikeModNames[baseIndex + i];
+                if (name == null) break;
+
+                Writer.BeginObject();
+                Writer.Prop("mod", name);
+                Writer.Prop("ms", WebTelemetry.SpikeModMs[baseIndex + i]);
+                Writer.EndObject();
+            }
+            Writer.EndArray();
+        }
+
+        /// <summary>
+        /// Spike time accumulated per method and per mod across the whole session. This is the
+        /// table that answers "what keeps causing my stutters", as opposed to the latest frame.
+        /// </summary>
+        private static void WriteSpikeAttribution()
+        {
+            WriteAttribution("spikeMethods", WebTelemetry.SpikeByMethod);
+            WriteAttribution("spikeMods", WebTelemetry.SpikeByMod);
+        }
+
+        private static void WriteAttribution(string key, Dictionary<string, SpikeAttribution> source)
+        {
+            var list = new List<SpikeAttribution>(source.Values);
+            list.Sort((a, b) => b.TotalMs.CompareTo(a.TotalMs));
+
+            Writer.BeginArray(key);
+            int take = Math.Min(list.Count, MaxAttributionRows);
+            for (int i = 0; i < take; i++)
+            {
+                var entry = list[i];
+                Writer.BeginObject();
+                Writer.Prop("name", entry.Name);
+                Writer.Prop("mod", entry.Mod);
+                Writer.Prop("totalMs", entry.TotalMs);
+                Writer.Prop("worstMs", entry.WorstMs);
+                Writer.Prop("spikes", entry.Spikes);
+                Writer.Prop("calls", entry.Calls);
                 Writer.EndObject();
             }
             Writer.EndArray();

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Text;
 using UnityEngine;
 using Verse;
 using Diag = System.Diagnostics;
@@ -8,8 +7,9 @@ using Diag = System.Diagnostics;
 namespace Analyzer.Profiling.Web
 {
     /// <summary>
-    /// One recorded frame-time spike. Kept as a struct in a pre-sized ring so a stutter storm
-    /// cannot grow the heap while the game is already struggling.
+    /// One recorded frame-time spike, plus indices into the shared attribution pools.
+    /// Kept as a struct in a pre-sized ring so a stutter storm cannot grow the heap while the
+    /// game is already struggling.
     /// </summary>
     public struct SpikeRecord
     {
@@ -20,10 +20,20 @@ namespace Analyzer.Profiling.Web
         public long Tick;
         public int Fps;
         public double HeapMB;
-        public string TopLabels;
-        public float TopMs;
-        public int StackId;
-        public int StackLines;
+        public int MethodSlots;
+        public int ModSlots;
+        public int MethodsSampled;
+    }
+
+    /// <summary>Running total of spike time attributed to one method or one mod.</summary>
+    public class SpikeAttribution
+    {
+        public string Name;
+        public string Mod;
+        public double TotalMs;
+        public float WorstMs;
+        public int Spikes;
+        public int Calls;
     }
 
     /// <summary>
@@ -31,7 +41,7 @@ namespace Analyzer.Profiling.Web
     /// Unity main thread, so it is allowed to touch UnityEngine and Verse state.
     ///
     /// The web server thread never calls into this class except through <see cref="LatestPayload"/>,
-    /// which is a plain string reference swap.
+    /// which is a plain volatile string reference swap.
     /// </summary>
     public static class WebTelemetry
     {
@@ -39,18 +49,16 @@ namespace Analyzer.Profiling.Web
         public const int FrameCapacity = 8192;
         public const int HistoryCapacity = 600;
         private const int RecentCapacity = 240;   // last ~4s, used for percentiles
+        private const int MaxSpikeSlots = 300;
+        public const int TopMethodsPerSpike = 8;
+        public const int TopModsPerSpike = 6;
+        private const int MaxCyclesPerFrame = 8;
 
         /// <summary>Master switch. When false the hooks return on the first instruction.</summary>
         public static bool Enabled = true;
 
         /// <summary>A frame at or above this many milliseconds is recorded as a spike.</summary>
         public static float SpikeThresholdMs = 100f;
-
-        /// <summary>Capture a formatted stack trace on spikes. Rate limited.</summary>
-        public static bool CaptureStacks = true;
-
-        private const float StackCaptureIntervalSeconds = 1.5f;
-        private const int MaxStackTraces = 40;
 
         public static int SessionId;
         public static bool Paused;
@@ -89,6 +97,7 @@ namespace Analyzer.Profiling.Web
 
         /// <summary>False when the runtime cannot report a working set, so the UI can hide it.</summary>
         public static bool WorkingSetAvailable;
+
         public static int Gc0PerSec, Gc1PerSec, Gc2PerSec;
         public static int Gc0Total, Gc1Total, Gc2Total;
         public static float SessionSeconds;
@@ -96,13 +105,24 @@ namespace Analyzer.Profiling.Web
         public static long FrameSpikesTotal;
 
         // ---- spikes ---------------------------------------------------------
-        public static readonly SpikeRecord[] Spikes = new SpikeRecord[300];
+        public static readonly SpikeRecord[] Spikes = new SpikeRecord[MaxSpikeSlots];
         public static int SpikeCount;
         public static int SpikeNext;
         private static long spikeSeq;
-        private static float lastStackCapture = -999f;
-        private static int stackSeq;
-        private static readonly Dictionary<int, string> StackTraces = new Dictionary<int, string>();
+
+        /// <summary>
+        /// Per-spike attribution pools. Flat arrays indexed by [spikeSlot * slots + i] so a spike
+        /// never allocates; the strings are references to DPA's own labels.
+        /// </summary>
+        public static readonly float[] SpikeMethodMs = new float[MaxSpikeSlots * TopMethodsPerSpike];
+        public static readonly string[] SpikeMethodLabels = new string[MaxSpikeSlots * TopMethodsPerSpike];
+        public static readonly string[] SpikeMethodMods = new string[MaxSpikeSlots * TopMethodsPerSpike];
+        public static readonly float[] SpikeModMs = new float[MaxSpikeSlots * TopModsPerSpike];
+        public static readonly string[] SpikeModNames = new string[MaxSpikeSlots * TopModsPerSpike];
+
+        /// <summary>Accumulated across every recorded spike - the "what keeps stuttering" answer.</summary>
+        public static readonly Dictionary<string, SpikeAttribution> SpikeByMethod = new Dictionary<string, SpikeAttribution>();
+        public static readonly Dictionary<string, SpikeAttribution> SpikeByMod = new Dictionary<string, SpikeAttribution>();
 
         // ---- internals ------------------------------------------------------
         private static readonly float[] recent = new float[RecentCapacity];
@@ -125,10 +145,12 @@ namespace Analyzer.Profiling.Web
         /// <summary>Accumulated across all ticks inside the current frame; drained in OnFrame.</summary>
         private static double tickMsThisFrame;
 
-        /// <summary>
-        /// Latest serialised payload. Written on the main thread, read by every SSE pump,
-        /// so it is volatile to keep the reference read from being hoisted.
-        /// </summary>
+        /// <summary>How many times DPA closed a profiling cycle during this frame.</summary>
+        private static int cyclesThisFrame;
+
+        public static int CyclesThisFrame => cyclesThisFrame;
+
+        /// <summary>Latest serialised payload. Written on the main thread, read by every SSE pump.</summary>
         public static volatile string LatestPayload = "{\"ready\":false}";
 
         /// <summary>Set every frame so the UI can show whether DPA hotspot data is flowing.</summary>
@@ -139,6 +161,11 @@ namespace Analyzer.Profiling.Web
         public static string ServerStatus = "stopped";
         public static string ServerError;
 
+        // scratch state for attribution, reused so a spike does not allocate
+        private static readonly Dictionary<string, float> modTotalsScratch = new Dictionary<string, float>();
+        private static readonly Dictionary<string, int> modCallsScratch = new Dictionary<string, int>();
+        private static readonly Dictionary<string, string> modKeyCache = new Dictionary<string, string>();
+
         public static void ResetSession()
         {
             SessionId++;
@@ -148,9 +175,6 @@ namespace Analyzer.Profiling.Web
             HistCount = 0;
             SpikeCount = 0;
             SpikeNext = 0;
-            spikeSeq = 0;
-            stackSeq = 0;
-            StackTraces.Clear();
             recentHead = 0;
             recentCount = 0;
 
@@ -179,6 +203,9 @@ namespace Analyzer.Profiling.Web
             WindowMaxTickMs = 0f;
             LastTickMs = 0f;
             tickMsThisFrame = 0;
+            cyclesThisFrame = 0;
+
+            ClearSpikes();
         }
 
         /// <summary>Called from the TickManager.DoSingleTick prefix.</summary>
@@ -199,6 +226,16 @@ namespace Analyzer.Profiling.Web
         }
 
         /// <summary>
+        /// Called when DPA closes a profiling cycle. One cycle is one frame in update mode and
+        /// one tick in tick mode, which is why the attribution below sums the last N cycles.
+        /// </summary>
+        public static void NotifyUpdateCycle()
+        {
+            if (!Enabled || Paused) return;
+            cyclesThisFrame++;
+        }
+
+        /// <summary>
         /// Called once per frame from the Root_Play.Update postfix. This is the only place
         /// we sample; everything else is derived from what lands here.
         /// </summary>
@@ -211,8 +248,8 @@ namespace Analyzer.Profiling.Web
                 ResetSession();
             }
 
-            if (!Enabled || Paused) return;
-            if (LongEventHandler.ShouldWaitForEvent) return;
+            if (!Enabled || Paused) { cyclesThisFrame = 0; return; }
+            if (LongEventHandler.ShouldWaitForEvent) { cyclesThisFrame = 0; return; }
 
             float dt = Time.unscaledDeltaTime;
             if (dt <= 0f) return;
@@ -249,6 +286,8 @@ namespace Analyzer.Profiling.Web
 
             if (windowElapsed >= 1f)
                 RollWindow();
+
+            cyclesThisFrame = 0;
 
             payloadElapsed += dt;
             if (!WebServer.IsRunning) return; // nobody is listening - skip the serialisation cost
@@ -394,8 +433,12 @@ namespace Analyzer.Profiling.Web
             WindowP99FrameMs = sortScratch[Mathf.Clamp((int)(n * 0.99f), 0, n - 1)];
         }
 
+        // ---- spike attribution ------------------------------------------------
+
         private static void RecordSpike(float frameMs, float frameTickMs)
         {
+            int slot = SpikeNext;
+
             var record = new SpikeRecord
             {
                 Id = (int)++spikeSeq,
@@ -404,96 +447,211 @@ namespace Analyzer.Profiling.Web
                 TickMs = frameTickMs,
                 Tick = Current.Game != null ? GenTicks.TicksAbs : 0,
                 Fps = Fps,
-                HeapMB = HeapMB,
-                TopLabels = BuildTopLabels(out float topMs),
-                TopMs = topMs
+                HeapMB = HeapMB
             };
 
-            if (CaptureStacks && SessionSeconds - lastStackCapture >= StackCaptureIntervalSeconds
-                && StackTraces.Count < MaxStackTraces)
-            {
-                lastStackCapture = SessionSeconds;
-                string stack = CaptureStack();
-                if (!string.IsNullOrEmpty(stack))
-                {
-                    int id = ++stackSeq;
-                    StackTraces[id] = stack;
-                    record.StackId = id;
-                    record.StackLines = CountLines(stack);
-                }
-            }
+            CaptureAttribution(slot, ref record);
 
-            Spikes[SpikeNext] = record;
+            Spikes[slot] = record;
             SpikeNext = (SpikeNext + 1) % Spikes.Length;
             if (SpikeCount < Spikes.Length) SpikeCount++;
         }
 
-        private static int CountLines(string s)
-        {
-            int n = 1;
-            for (int i = 0; i < s.Length; i++)
-                if (s[i] == '\n') n++;
-            return n;
-        }
-
         /// <summary>
-        /// Grabs the top few profiled entries at the instant of the spike, so the timeline can
-        /// say "this 400ms frame was Thing.Tick". Only populated while DPA is profiling.
+        /// Works out what the frame actually spent its time on.
+        ///
+        /// A stack trace taken here would be worthless: by the time the frame ends the only
+        /// frames left are Root.Update and our own postfix, which says nothing about the work
+        /// that just took 400ms. DPA already timed every patched method, so we read those
+        /// timings back instead - summing the cycles that belong to this frame.
         /// </summary>
-        private static string BuildTopLabels(out float topMs)
+        private static void CaptureAttribution(int slot, ref SpikeRecord record)
         {
-            topMs = 0f;
-            var logs = global::Analyzer.Profiling.Analyzer.Logs;
-            if (logs == null || logs.Count == 0) return null;
+            int methodBase = slot * TopMethodsPerSpike;
+            int modBase = slot * TopModsPerSpike;
 
-            int take = Mathf.Min(4, logs.Count);
-            var sb = new StringBuilder(96);
-            for (int i = 0; i < take; i++)
+            for (int i = 0; i < TopMethodsPerSpike; i++)
             {
-                var log = logs[i];
-                if (log == null) continue;
-                if (i == 0) topMs = log.max;
-                if (i > 0) sb.Append(" | ");
-                sb.Append(log.label);
-                sb.Append(' ');
-                sb.Append(Math.Round(log.max, 1));
-                sb.Append("ms");
+                SpikeMethodMs[methodBase + i] = 0f;
+                SpikeMethodLabels[methodBase + i] = null;
+                SpikeMethodMods[methodBase + i] = null;
             }
-            return sb.Length == 0 ? null : sb.ToString();
+            for (int i = 0; i < TopModsPerSpike; i++)
+            {
+                SpikeModMs[modBase + i] = 0f;
+                SpikeModNames[modBase + i] = null;
+            }
+
+            var profiles = ProfileController.Profiles;
+            if (profiles == null || profiles.IsEmpty) return;
+
+            int cycles = Math.Max(1, Math.Min(cyclesThisFrame, MaxCyclesPerFrame));
+            modTotalsScratch.Clear();
+            modCallsScratch.Clear();
+
+            int sampled = 0;
+
+            foreach (var pair in profiles)
+            {
+                var profiler = pair.Value;
+                if (profiler == null || profiler.Empty) continue;
+
+                float total = 0f;
+                int calls = 0;
+                int index = (int)profiler.currentIndex;
+
+                for (int j = 0; j < cycles; j++)
+                {
+                    int at = index - 1 - j;
+                    if (at < 0) at += Profiler.RECORDS_HELD;
+                    if (at >= Profiler.RECORDS_HELD) continue;
+                    if (profiler.hits[at] == 0) continue; // no calls in that cycle; the time slot is stale
+
+                    total += (float)profiler.times[at];
+                    calls += profiler.hits[at];
+                }
+
+                if (total <= 0f) continue;
+                sampled++;
+
+                string mod = ModKeyFor(profiler);
+                InsertMethod(methodBase, profiler.label ?? profiler.key, mod, total);
+                Accumulate(modTotalsScratch, mod, total);
+                Accumulate(modCallsScratch, mod, calls);
+
+                AccumulateAttribution(SpikeByMethod, profiler.label ?? profiler.key, mod, total, calls);
+            }
+
+            int methods = 0;
+            for (int i = 0; i < TopMethodsPerSpike; i++)
+                if (SpikeMethodLabels[methodBase + i] != null) methods++;
+
+            foreach (var pair in modTotalsScratch)
+            {
+                InsertMod(modBase, pair.Key, pair.Value);
+                modCallsScratch.TryGetValue(pair.Key, out int calls);
+                AccumulateAttribution(SpikeByMod, pair.Key, pair.Key, pair.Value, calls);
+            }
+
+            int mods = 0;
+            for (int i = 0; i < TopModsPerSpike; i++)
+                if (SpikeModNames[modBase + i] != null) mods++;
+
+            record.MethodSlots = methods;
+            record.ModSlots = mods;
+            record.MethodsSampled = sampled;
         }
 
-        private static string CaptureStack()
+        private static void Accumulate(Dictionary<string, float> map, string key, float value)
         {
-            try
-            {
-                var trace = new Diag.StackTrace(2, true);
-                return StackTraceUtility.GetStackTraceString(trace, out _);
-            }
-            catch (Exception e)
-            {
-                return "stack capture failed: " + e.Message;
-            }
+            map.TryGetValue(key, out float current);
+            map[key] = current + value;
         }
 
-        public static string GetStack(int id)
+        private static void Accumulate(Dictionary<string, int> map, string key, int value)
         {
-            return StackTraces.TryGetValue(id, out var value) ? value : null;
+            map.TryGetValue(key, out int current);
+            map[key] = current + value;
+        }
+
+        private static void AccumulateAttribution(Dictionary<string, SpikeAttribution> map, string name, string mod, float ms, int calls)
+        {
+            if (!map.TryGetValue(name, out var entry))
+            {
+                entry = new SpikeAttribution { Name = name, Mod = mod };
+                map[name] = entry;
+            }
+
+            entry.TotalMs += ms;
+            entry.Spikes++;
+            entry.Calls += calls;
+            if (ms > entry.WorstMs) entry.WorstMs = ms;
+        }
+
+        /// <summary>Insertion sort into the fixed top-N array, which is at most 8 long.</summary>
+        private static void InsertMethod(int baseIndex, string label, string mod, float ms)
+        {
+            int at = -1;
+            for (int i = 0; i < TopMethodsPerSpike; i++)
+            {
+                if (SpikeMethodLabels[baseIndex + i] == null || ms > SpikeMethodMs[baseIndex + i])
+                {
+                    at = i;
+                    break;
+                }
+            }
+            if (at < 0) return;
+
+            for (int i = TopMethodsPerSpike - 1; i > at; i--)
+            {
+                SpikeMethodMs[baseIndex + i] = SpikeMethodMs[baseIndex + i - 1];
+                SpikeMethodLabels[baseIndex + i] = SpikeMethodLabels[baseIndex + i - 1];
+                SpikeMethodMods[baseIndex + i] = SpikeMethodMods[baseIndex + i - 1];
+            }
+
+            SpikeMethodMs[baseIndex + at] = ms;
+            SpikeMethodLabels[baseIndex + at] = label;
+            SpikeMethodMods[baseIndex + at] = mod;
+        }
+
+        private static void InsertMod(int baseIndex, string name, float ms)
+        {
+            int at = -1;
+            for (int i = 0; i < TopModsPerSpike; i++)
+            {
+                if (SpikeModNames[baseIndex + i] == null || ms > SpikeModMs[baseIndex + i])
+                {
+                    at = i;
+                    break;
+                }
+            }
+            if (at < 0) return;
+
+            for (int i = TopModsPerSpike - 1; i > at; i--)
+            {
+                SpikeModMs[baseIndex + i] = SpikeModMs[baseIndex + i - 1];
+                SpikeModNames[baseIndex + i] = SpikeModNames[baseIndex + i - 1];
+            }
+
+            SpikeModMs[baseIndex + at] = ms;
+            SpikeModNames[baseIndex + at] = name;
+        }
+
+        private static string ModKeyFor(Profiler profiler)
+        {
+            if (modKeyCache.TryGetValue(profiler.key, out var cached)) return cached;
+
+            // Same resolution DPA itself uses when it fills ProfileLog.modKey.
+            var assembly = profiler.meth?.DeclaringType?.Assembly ?? profiler.type?.Assembly;
+            string mod = ModInfoCache.GetFilterKey(assembly);
+            modKeyCache[profiler.key] = mod;
+            return mod;
         }
 
         public static void ClearSpikes()
         {
             SpikeCount = 0;
             SpikeNext = 0;
-            StackTraces.Clear();
             FrameSpikesTotal = 0;
+            SpikeByMethod.Clear();
+            SpikeByMod.Clear();
+            Array.Clear(SpikeMethodLabels, 0, SpikeMethodLabels.Length);
+            Array.Clear(SpikeMethodMods, 0, SpikeMethodMods.Length);
+            Array.Clear(SpikeModNames, 0, SpikeModNames.Length);
         }
 
         /// <summary>Logical index 0 is the oldest retained spike.</summary>
         public static SpikeRecord SpikeAt(int logicalIndex)
         {
             int start = SpikeCount < Spikes.Length ? 0 : SpikeNext;
-            int idx = (start + logicalIndex) % Spikes.Length;
-            return Spikes[idx];
+            return Spikes[(start + logicalIndex) % Spikes.Length];
+        }
+
+        /// <summary>Physical ring slot for a logical index, used to reach the attribution pools.</summary>
+        public static int SpikeSlot(int logicalIndex)
+        {
+            int start = SpikeCount < Spikes.Length ? 0 : SpikeNext;
+            return (start + logicalIndex) % Spikes.Length;
         }
     }
 }

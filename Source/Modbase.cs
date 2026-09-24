@@ -35,7 +35,20 @@ namespace Analyzer
             {
                 Settings = GetSettings<Settings>();
 
-                ThreadSafeLogger.Message($"[Analyzer] Loaded version {analyzerVersion.Major}.{analyzerVersion.Minor}.{analyzerVersion.Build} rev {analyzerVersion.Revision}");
+                // We are on the Unity main thread here; ThreadSafeLogger needs to know which
+                // thread that is so it can defer messages coming off patch worker threads.
+                ThreadSafeLogger.CaptureMainThread();
+
+                // Spell out which assembly is live and how it was compiled. Without this it is
+                // guesswork to tell a Release build from a Debug one when reading a log.
+                var build =
+#if DEBUG
+                    "Debug";
+#else
+                    "Release";
+#endif
+                ThreadSafeLogger.Message($"[Analyzer] Loaded version {analyzerVersion.Major}.{analyzerVersion.Minor}.{analyzerVersion.Build} rev {analyzerVersion.Revision} - {build} build");
+                ThreadSafeLogger.Message($"[Analyzer] Assembly: {typeof(Modbase).Assembly.Location}");
 
                 staticHarmony = new Harmony("Dubwise.PerformanceAnalyzer");
                 harmony = new Harmony("Dubwise.DubsProfiler");;

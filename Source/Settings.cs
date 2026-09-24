@@ -29,7 +29,6 @@ namespace Analyzer
         public static bool webMonitorEnabled = false;
         public static int webMonitorPort = 25951;
         public static float webSpikeThresholdMs = 100f;
-        public static bool webCaptureStacks = true;
         public static float webPayloadHz = 2f;
 
         // Performance Settings are held in the type which implements the optimisation
@@ -65,7 +64,6 @@ namespace Analyzer
             Scribe_Values.Look(ref webMonitorEnabled, "webMonitorEnabled", false);
             Scribe_Values.Look(ref webMonitorPort, "webMonitorPort", 25951);
             Scribe_Values.Look(ref webSpikeThresholdMs, "webSpikeThresholdMs", 100f);
-            Scribe_Values.Look(ref webCaptureStacks, "webCaptureStacks", true);
             Scribe_Values.Look(ref webPayloadHz, "webPayloadHz", 2f);
 
             if (ModFilter.BlockedKeys == null)

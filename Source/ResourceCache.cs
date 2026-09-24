@@ -78,7 +78,6 @@ namespace Analyzer
         public static string settings_web_port => "settings.web.port".Tr();
         public static string settings_web_port_apply => "settings.web.port.apply".Tr();
         public static string settings_web_threshold => "settings.web.threshold".Tr();
-        public static string settings_web_stacks => "settings.web.stacks".Tr();
         public static string settings_web_payload_hz => "settings.web.payloadhz".Tr();
 
 

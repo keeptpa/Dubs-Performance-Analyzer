@@ -40,12 +40,24 @@ settings page and page header both show the port that actually bound.
 - Per-tick cost and the worst tick in the window, so a spike can be attributed to tick work vs. render work
 - Managed heap (MB), process working set (MB)
 - GC gen0/1/2 collections per second and in total
-- A spike log: every frame over the threshold, with its tick cost, FPS, heap and — rate limited to one every 1.5s — a full Harmony-aware call stack
+- A spike log: every frame over the threshold, with its tick cost, FPS and heap
 
 **While deep profiling is on:**
 
 - Per-method table: average, peak, total, call count and share of the frame
 - Per-mod rollup: which mod is eating your TPS, aggregated across methods
+- **Per-spike breakdown**: click the method shown in a spike row to see which methods that
+  particular frame spent its time on, plus the per-mod split for that frame
+- **Spike attribution rollups**: total spike time accumulated per method and per mod across
+  the session — the answer to "what keeps hitching" rather than "what hitched once"
+
+> **Why spikes carry no stack trace.** A stack captured at the end of a frame contains only
+> `Root.Update` and then this mod's own postfix, because the work has already finished by
+> then; it cannot say what the 400ms was spent on. DPA's own stack trace panel works
+> differently — you pick one method and it records who *calls* it. The per-spike breakdown
+> uses DPA's per-method timers instead, which does answer the question. Nested calls are
+> counted more than once, so a breakdown total can exceed the frame time: read it as
+> relative share.
 
 ---
 
@@ -54,7 +66,7 @@ settings page and page header both show the port that actually bound.
 | File | Role |
 | --- | --- |
 | `Source/Profiling/Web/WebEntry.cs` | Lifecycle, Harmony hooks, and the queue that marshals HTTP requests onto the main thread |
-| `Source/Profiling/Web/WebTelemetry.cs` | Main-thread sampler: ring buffers, per-second rollups, spike detection and stack capture |
+| `Source/Profiling/Web/WebTelemetry.cs` | Main-thread sampler: ring buffers, per-second rollups, spike detection and per-frame attribution |
 | `Source/Profiling/Web/WebSnapshot.cs` | Serialises the current state to one JSON document |
 | `Source/Profiling/Web/WebServer.cs` | Hand-rolled HTTP/1.1 server on a loopback `TcpListener`, with chunked server-sent events |
 | `Source/Profiling/Web/WebProfilerControl.cs` | Starts DPA profiling headlessly (entry discovery, hook installation, entry patching) |

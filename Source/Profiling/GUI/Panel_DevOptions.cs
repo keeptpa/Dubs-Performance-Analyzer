@@ -361,12 +361,6 @@ namespace Analyzer.Profiling
 			DubGUI.LabeledSliderFloat(listing, Strings.settings_web_threshold, ref Settings.webSpikeThresholdMs, 10f, 1000f);
 			Web.WebTelemetry.SpikeThresholdMs = Settings.webSpikeThresholdMs;
 
-			if (DubGUI.Checkbox(Strings.settings_web_stacks, listing, ref Settings.webCaptureStacks))
-			{
-				Web.WebTelemetry.CaptureStacks = Settings.webCaptureStacks;
-				Modbase.Settings?.Write();
-			}
-
 			DubGUI.LabeledSliderFloat(listing, Strings.settings_web_payload_hz, ref Settings.webPayloadHz, 0.5f, 10f);
 			Web.WebEntry.PayloadHz = Settings.webPayloadHz;
 		}
