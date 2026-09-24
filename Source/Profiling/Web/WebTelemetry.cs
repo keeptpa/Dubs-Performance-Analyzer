@@ -86,6 +86,9 @@ namespace Analyzer.Profiling.Web
         public static float WindowMaxTickMs;
         public static double HeapMB;
         public static double WorkingSetMB;
+
+        /// <summary>False when the runtime cannot report a working set, so the UI can hide it.</summary>
+        public static bool WorkingSetAvailable;
         public static int Gc0PerSec, Gc1PerSec, Gc2PerSec;
         public static int Gc0Total, Gc1Total, Gc2Total;
         public static float SessionSeconds;
@@ -355,11 +358,21 @@ namespace Analyzer.Profiling.Web
         {
             try
             {
-                selfProcess ??= Diag.Process.GetCurrentProcess();
-                return selfProcess.WorkingSet64 / 1048576.0;
+                // Mono (which is what Unity gives us) does not populate Process.WorkingSet64,
+                // it comes back as zero. Environment.WorkingSet is the portable one that does work.
+                long bytes = Environment.WorkingSet;
+                if (bytes <= 0)
+                {
+                    selfProcess ??= Diag.Process.GetCurrentProcess();
+                    bytes = selfProcess.WorkingSet64;
+                }
+
+                WorkingSetAvailable = bytes > 0;
+                return bytes / 1048576.0;
             }
             catch
             {
+                WorkingSetAvailable = false;
                 return 0d;
             }
         }

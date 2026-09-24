@@ -17,17 +17,17 @@
   // ---------------------------------------------------------------- helpers
 
   function num(v, digits) {
-    if (v === null || v === undefined || !isFinite(v)) return '—';
+    if (v === null || v === undefined || !Number.isFinite(v)) return '—';
     return Number(v).toFixed(digits === undefined ? 1 : digits);
   }
 
   function int(v) {
-    if (v === null || v === undefined || !isFinite(v)) return '—';
+    if (v === null || v === undefined || !Number.isFinite(v)) return '—';
     return Math.round(v).toString();
   }
 
   function clock(seconds) {
-    if (!isFinite(seconds)) return '—';
+    if (!Number.isFinite(seconds)) return '—';
     var s = Math.max(0, Math.floor(seconds));
     var m = Math.floor(s / 60);
     var sec = s % 60;
@@ -70,7 +70,7 @@
   }
 
   function niceMax(value) {
-    if (!isFinite(value) || value <= 0) return 1;
+    if (!Number.isFinite(value) || value <= 0) return 1;
     var exp = Math.pow(10, Math.floor(Math.log10(value)));
     var frac = value / exp;
     var step = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 5 ? 5 : 10;
@@ -108,7 +108,7 @@
       for (var s = 0; s < config.series.length; s++) {
         var d = config.series[s].data || [];
         for (var k = 0; k < d.length; k++) {
-          if (isFinite(d[k]) && d[k] > yMax) yMax = d[k];
+          if (Number.isFinite(d[k]) && d[k] > yMax) yMax = d[k];
         }
       }
       if (config.threshold && config.threshold > yMax) yMax = config.threshold;
@@ -160,7 +160,7 @@
         ctx.beginPath();
         var started = false;
         for (var fi = 0; fi < data.length; fi++) {
-          if (!isFinite(data[fi])) continue;
+          if (!Number.isFinite(data[fi])) continue;
           if (!started) { ctx.moveTo(xAt(fi), padT + plotH); started = true; }
           ctx.lineTo(xAt(fi), yAt(data[fi]));
         }
@@ -181,7 +181,7 @@
       var pen = false;
       for (var di = 0; di < data.length; di++) {
         var value = data[di];
-        if (!isFinite(value)) { pen = false; continue; }
+        if (!Number.isFinite(value)) { pen = false; continue; }
         var px = xAt(di), py = yAt(value);
         if (pen) ctx.lineTo(px, py);
         else { ctx.moveTo(px, py); pen = true; }
@@ -432,21 +432,21 @@
   // ---------------------------------------------------------------- status
 
   function renderStatus(p) {
-    var conn = $('conn');
-
     if (p.error) {
-      conn.className = 'conn conn-bad';
-      conn.textContent = '序列化错误';
-      conn.title = p.error;
-    } else if (state.connected) {
-      conn.className = p.inGame ? 'conn conn-ok' : 'conn conn-wait';
-      conn.textContent = p.inGame ? '已连接' : '主菜单';
-      conn.title = p.inGame ? '' : '游戏在主菜单，没有可采样的殖民地';
+      setConn('conn-bad', '序列化错误', p.error);
+    } else if (p.inGame) {
+      setConn('conn-ok', '已连接');
+    } else {
+      setConn('conn-wait', '主菜单', '游戏在主菜单，没有可采样的殖民地');
     }
+
+    // TPS is only meaningful while the game is actually advancing - pausing or losing
+    // window focus stops the tick loop, and a flat zero would otherwise look like a bug.
+    var tickNote = (p.inGame && p.tps === 0) ? ' · 未推进（暂停/失焦）' : '';
 
     $('session').textContent =
       'HTTP ' + (p.server && p.server.status === 'running' ? (':' + p.server.port) : (p.server ? p.server.status : '?')) +
-      ' · ' + num(p.payloadHz, 0) + ' Hz · 阈值 ' + num(p.thresholdMs, 0) + 'ms';
+      ' · ' + num(p.payloadHz, 0) + ' Hz · 阈值 ' + num(p.thresholdMs, 0) + 'ms' + tickNote;
 
     var btnDeep = $('btn-deep');
     btnDeep.textContent = '深度分析：' + (p.deep ? '开' : '关');
@@ -467,12 +467,7 @@
     if (!p || p.seq === undefined) return;
     state.payload = p;
     state.lastMessageAt = Date.now();
-
-    if (!state.connected) {
-      state.connected = true;
-      $('conn').className = 'conn conn-ok';
-      $('conn').textContent = '已连接';
-    }
+    state.connected = true;
 
     try {
       renderStatus(p);
@@ -482,9 +477,8 @@
       renderLogs(p);
       renderMods(p);
     } catch (e) {
-      $('conn').className = 'conn conn-bad';
-      $('conn').textContent = '渲染错误';
-      $('conn').title = e.message;
+      setConn('conn-bad', '渲染错误', e.message);
+      console.error('render failed', e);
     }
   }
 
@@ -492,16 +486,43 @@
 
   var pollTimer = null;
 
+  function setConn(cls, text, title) {
+    var conn = $('conn');
+    conn.className = 'conn ' + cls;
+    conn.textContent = text;
+    conn.title = title || '';
+  }
+
+  // A malformed payload is NOT a lost connection. Reporting it as one sends you hunting
+  // through firewalls and ports when the real fault is a serialisation bug.
+  function safeParse(text) {
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      state.connected = false;
+      setConn('conn-bad', '数据格式错误',
+        '服务器返回的内容不是合法 JSON：' + e.message +
+        '\n\n前 200 字符：\n' + String(text).slice(0, 200));
+      console.error('payload parse failed', e, text);
+      return null;
+    }
+  }
+
   function startPolling() {
     if (pollTimer) return;
     pollTimer = setInterval(function () {
       fetch('/api/snapshot', { cache: 'no-store' })
-        .then(function (r) { return r.json(); })
-        .then(render)
-        .catch(function () {
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.text();
+        })
+        .then(function (text) {
+          var payload = safeParse(text);
+          if (payload) render(payload);
+        })
+        .catch(function (e) {
           state.connected = false;
-          $('conn').className = 'conn conn-bad';
-          $('conn').textContent = '连接断开';
+          setConn('conn-bad', '连接断开', e.message);
         });
     }, 500);
   }
@@ -512,15 +533,15 @@
     var es = new EventSource('/api/stream');
 
     es.onmessage = function (event) {
+      var payload = safeParse(event.data);
+      if (!payload) return;
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-      try { render(JSON.parse(event.data)); }
-      catch (e) { /* a partial frame - the next one will be fine */ }
+      render(payload);
     };
 
     es.onerror = function () {
       state.connected = false;
-      $('conn').className = 'conn conn-wait';
-      $('conn').textContent = '重连中…';
+      setConn('conn-wait', '重连中…');
       // EventSource retries on its own; this is just so a long stall still shows data.
       startPolling();
     };

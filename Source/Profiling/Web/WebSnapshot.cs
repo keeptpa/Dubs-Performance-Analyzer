@@ -65,7 +65,8 @@ namespace Analyzer.Profiling.Web
             Writer.Prop("frames", WebTelemetry.FramesRendered);
 
             Writer.Prop("heapMB", WebTelemetry.HeapMB);
-            Writer.Prop("wsMB", WebTelemetry.WorkingSetMB);
+            if (WebTelemetry.WorkingSetAvailable) Writer.Prop("wsMB", WebTelemetry.WorkingSetMB);
+            else Writer.PropRaw("wsMB", "null");
             Writer.Prop("gc0", WebTelemetry.Gc0PerSec);
             Writer.Prop("gc1", WebTelemetry.Gc1PerSec);
             Writer.Prop("gc2", WebTelemetry.Gc2PerSec);
@@ -100,7 +101,7 @@ namespace Analyzer.Profiling.Web
             WriteHist("tps", WebTelemetry.HistTps);
             WriteHist("frameAvgMs", WebTelemetry.HistFrameAvgMs);
             WriteHist("heapMB", WebTelemetry.HistHeapMB);
-            WriteHist("wsMB", WebTelemetry.HistWorkingSetMB);
+            WriteHist("wsMB", WebTelemetry.HistWorkingSetMB, nullWhenUnavailable: !WebTelemetry.WorkingSetAvailable);
             WriteHist("gc0", WebTelemetry.HistGc0);
             WriteHist("gc1", WebTelemetry.HistGc1);
             WriteHist("gc2", WebTelemetry.HistGc2);
@@ -138,14 +139,18 @@ namespace Analyzer.Profiling.Web
             Writer.EndArray();
         }
 
-        private static void WriteHist(string key, float[] source)
+        private static void WriteHist(string key, float[] source, bool nullWhenUnavailable = false)
         {
             int count = WebTelemetry.HistCount;
             int start = count < WebTelemetry.HistoryCapacity ? 0 : WebTelemetry.HistHead;
 
             Writer.BeginArray(key);
             for (int i = 0; i < count; i++)
-                Writer.Item(source[(start + i) % WebTelemetry.HistoryCapacity]);
+            {
+                float value = source[(start + i) % WebTelemetry.HistoryCapacity];
+                if (nullWhenUnavailable && value <= 0f) Writer.ItemRaw("null");
+                else Writer.Item(value);
+            }
             Writer.EndArray();
         }
 

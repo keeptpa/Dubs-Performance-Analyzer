@@ -68,10 +68,17 @@ namespace Analyzer.Profiling.Web
             return this;
         }
 
+        /// <summary>
+        /// Emits the `"key":` prefix, or nothing at all when this is an array element.
+        /// The comma must be written in both cases - a keyless container start is an element
+        /// like any other, and skipping the separator here produces `{..}{..}` which no parser
+        /// will accept.
+        /// </summary>
         private void WriteKeyIfPresent(string key)
         {
-            if (key == null) return;
             Separate();
+            if (key == null) return;
+
             WriteEscaped(key);
             sb.Append(':');
             needComma = false;
